@@ -23,6 +23,8 @@
  *   channelRms               span<float>[visPerRow]
  *   matrix                   MdSpan2D<double>[nAnt, nAnt]
  *   antennaRms               span<float>[nPol*nAnt]  (meta order: [pol*nAnt + ant])
+ *   rmsPerAntenna (K5b)      span<double>[nPol*nAnt] (same order, all pols;
+ *                            K5b applies every polarization in one launch)
  *   symbols                  MdSpan2D<std::uint32_t>[nVis, 2]  (re, imag)
  *   packed                   span<std::uint8_t>[ceil(2*nVis*bits/8)]
  */
@@ -94,7 +96,7 @@ void k5b_apply_antenna_norm(MdSpan2D<double> re, MdSpan2D<double> im,
                             cuda::std::span<const std::int32_t> ant1,
                             cuda::std::span<const std::int32_t> ant2,
                             std::size_t nChannels, std::size_t nPol,
-                            std::size_t pol,
+                            std::size_t nAnt,
                             cuda::std::span<const double> rmsPerAntenna,
                             dysco_stream_t stream);
 

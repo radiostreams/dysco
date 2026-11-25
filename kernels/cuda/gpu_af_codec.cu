@@ -75,7 +75,7 @@ struct AfCodec::Impl {
   Managed<std::int32_t> ant1, ant2;
   Managed<float> meta;  // visPerRow + nPol*nAnt
   Managed<double> matrix;
-  Managed<double> rmsPerAnt;
+  Managed<double> rmsPerAnt;  // nPol*nAnt, [pol*nAnt + ant]
   Managed<std::uint32_t> symbols;
   Managed<std::uint8_t> packed;
   Managed<float> out;
@@ -100,7 +100,7 @@ struct AfCodec::Impl {
         ant2(allocate<std::int32_t>(nRows)),
         meta(allocate<float>(visPerRow + nPol * nAnt)),
         matrix(allocate<double>(nAnt * nAnt)),
-        rmsPerAnt(allocate<double>(nAnt)),
+        rmsPerAnt(allocate<double>(nPol * nAnt)),
         symbols(allocate<std::uint32_t>(2 * nVis)),
         packed(allocate<std::uint8_t>(packedBytes)),
         out(allocate<float>(2 * nVis)) {
@@ -178,27 +178,34 @@ void AfCodec::encode(dysco::span<const float> interleavedIn,
                                                       s.visPerRow),
                          stream);
 
+  // The antenna gains for every polarization must be known before K5b can
+  // apply all of them in one launch.  K3/K4 for pol p only read pol-p
+  // visibilities (which no other pol's normalization touches), so computing
+  // all gains first is bit-identical to the CPU's interleaved per-pol order.
   for (std::size_t pol = 0; pol != s.nPol; ++pol) {
     k3_antenna_rms_matrix(re, im, ant1View, ant2View, s.nChannels, s.nPol,
                           pol, MdSpan2D<double>(s.matrix.get(), s.nAnt, s.nAnt),
                           stream);
     k4_antenna_gain_solve(MdSpan2D<const double>(s.matrix.get(), s.nAnt,
                                                  s.nAnt),
-                          cuda::std::span<double>(s.rmsPerAnt.get(), s.nAnt),
+                          cuda::std::span<double>(s.rmsPerAnt.get() +
+                                                      pol * s.nAnt,
+                                                  s.nAnt),
                           stream);
-    k5b_apply_antenna_norm(re, im, ant1View, ant2View, s.nChannels, s.nPol,
-                           pol,
-                           cuda::std::span<const double>(s.rmsPerAnt.get(),
-                                                         s.nAnt),
-                           stream);
     // Store the antenna gains in the metadata block, in the same order as the
     // CPU encoder ([visPerRow + pol*nAnt + antenna]).
     k4_store_antenna_gains(
-        cuda::std::span<const double>(s.rmsPerAnt.get(), s.nAnt),
+        cuda::std::span<const double>(s.rmsPerAnt.get() + pol * s.nAnt,
+                                      s.nAnt),
         cuda::std::span<float>(s.meta.get() + s.visPerRow + pol * s.nAnt,
                                s.nAnt),
         stream);
   }
+  k5b_apply_antenna_norm(re, im, ant1View, ant2View, s.nChannels, s.nPol,
+                         s.nAnt,
+                         cuda::std::span<const double>(s.rmsPerAnt.get(),
+                                                       s.nPol * s.nAnt),
+                         stream);
 
   if (fitToMaximum) {
     k6_fit_to_max(re, im, ant1View, ant2View, s.nChannels, s.nPol, s.nAnt,

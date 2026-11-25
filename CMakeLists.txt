@@ -114,6 +114,12 @@ if(ENABLE_CUDA)
   target_include_directories(dsbench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(dsbench CUDA::cudart ${GSL_LIBRARIES})
 
+  # K5 micro-benchmark on real (SKA / MWA) time blocks.
+  add_executable(dsbench_k5 bench/bench_k5.cu ${DYSCO_GPU_SOURCES})
+  target_include_directories(dsbench_k5 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                                                ${CMAKE_CURRENT_SOURCE_DIR}/kernels/cuda)
+  target_link_libraries(dsbench_k5 CUDA::cudart)
+
   # Bit-compatibility test: CPU reference (Philox) vs GPU kernels.
   add_executable(dysco_gpu_test kernels/cuda/test_af_codec.cu
                                 ${DYSCO_GPU_SOURCES} kernels/af_reference.cc)
